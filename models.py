@@ -81,7 +81,9 @@ class Issue(DeclarativeBase):
     cover_story = Column(String)
     url = Column(String)
 
-    # TODO: make sure this works, for example we have either instance
+    # TODO: make sure this works for both direction, get articles under issue
+    # and get issue from article.
+
     # - issue = someIssue()
     # - issue.articles.all()
 
@@ -106,13 +108,21 @@ class Article(DeclarativeBase):
     # Example:
     # http://weekly.caixin.com/[2015-01-02]/[100770279].html
 
-    # TODO: add `issue_id-` as prefix to make sure uniqueness
+    # id = 20150102100770279, date + id
     id = Column(Integer, primary_key=True)
     url = Column(String)
 
     abstract = Column(String, nullable=True)
     author = Column(String, nullable=True)
+
+    # Origin article content is in json: {'content': content, ...}
+    # http://tag.caixin.com/news/NewsV51.jsp?id=100828060&page=0&rand=0.945020263781771
+    # where:
+    #  - `id` is article id(looks unique, but still add 8-digit date for safe..)
+    #  - `page=0` to get full text
+    #  - `rand' is optional, ... guess it's just for fun?
     content = Column(String)
+    content_plain_html = Column(String)
 
     # TODO: convenient 1-to-many query for both
     # articles under same issue and publish date
