@@ -10,7 +10,6 @@ from models import db_connect
 import os
 import pickle
 import requests
-import re
 import settings
 
 # Save pickle session to the same folder as login.py
@@ -25,19 +24,24 @@ def load_session_or_login():
     """
     try:
         session = pickle.load(open(session_path, 'rb'))
-        # TODO: verify correctness, or raise error
+
+        # Get user's home page to verify:
         # - should contain cookies
         # - didn't timeout, get a new page to check
+        logged_in = session.get('http://user.caixin.com/')
+        if not 'base_info' in logged_in.text:
+            raise ValueError
+
         return session
     except (TypeError, FileNotFoundError, ValueError):
         # TypeError: didn't use open(filename, 'rb')
         # FileNotFoundError: file not found
-        # ValueError: didn't use python3, unsupported pickle protocol
+        # ValueError: didn't use python3, unsupported pickle protocol;
+        #  or just lost login session.
         return login()
 
 
 def login():
-    url_in_login = re.compile('(?<=src=\").*?(?=\")')
     headers = {
         'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_3) '
                       'AppleWebKit/537.36 (KHTML, like Gecko) '
@@ -45,35 +49,36 @@ def login():
         'Referer': 'http://user.caixin.com/usermanage/login/',
         'Via': 'Copyright@2014 Caixin'
     }
-    # TODO: check this `cookiestime`
     data = dict(
-        backUrl='http://weekly.caixin.com/',
-        cookietime='31536000',
+        username=settings.USERNAME,
+        password=settings.PASSWORD,
+        cookietime=31536000  # seems TTL of cookies
     )
 
-    data['username'] = settings.USERNAME
-    data['password'] = settings.PASSWORD
-
     # Init cookies
-    login_session = requests.session()
-    login_session.get('http://user.caixin.com/usermanage/login/',
-                      headers=headers)
+    session = requests.session()
+    session.headers.update(headers)
+    session.get('http://weekly.caixin.com/')
+
+    # Go to login page
+    login_url = 'http://user.caixin.com/usermanage/login/'
+    session.get(login_url)
 
     # Login
-    j = login_session.post('http://user.caixin.com/usermanage/login/',
-                           headers=headers,
-                           data=data)
-
-    # Finish login by GET each redirecting-urls
-    urls = url_in_login.findall(j.text)
-    for url in urls:
-        _ = login_session.get(url, headers=headers)
-
-    # Go to index
-    logged_in = login_session.get('http://weekly.caixin.com/')
+    # this POST would automatically set cookies for session
+    k = session.post(login_url, data=data)
+    logged_in = session.get('http://user.caixin.com/')
+    if 'SA_USER_auth' in k.headers['set-cookie'] \
+            and 'base_info' in logged_in.text:
+        # log.info('login succeed!')
+        _logged = True
+    else:
+        raise OverflowError("BOMB! Didn't log in!")
 
     # Dump to the same folder as login.py
-    pickle.dump(logged_in, open(session_path, 'wb'))
+    pickle.dump(session, open(session_path, 'wb'))
 
-    return logged_in
+    return session
 
+if __name__ == '__main__':
+    load_session_or_login()
