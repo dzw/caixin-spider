@@ -36,3 +36,5 @@ Ideally:
 * Non-blocking mechanism
 
 * Ebook generation and push system
+
+* Introduce Workflow system for incremental updating: check Issue(if new parse new else check article), check articles(unfinished ones), generate to-crawl-list(if blank done), send to non-blocking engine. (just an idea, ref [repo](https://github.com/rbarrois/xworkflows)) 
