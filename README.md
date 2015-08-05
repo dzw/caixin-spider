@@ -1,6 +1,11 @@
-## Development Status
+## Development Status&Tip
 
 ONLY login snippets and database backend has been implemented.
+
+Tips:
+
+- try setup travis/dockerhub script, sqlite3 would be good(i guess).
+- dev on branch(looks more friendly, but not sure how to do code review..)
 
 ## Prerequisites
 
@@ -31,3 +36,5 @@ Ideally:
 * Non-blocking mechanism
 
 * Ebook generation and push system
+
+* Introduce Workflow system for incremental updating: check Issue(if new parse new else check article), check articles(unfinished ones), generate to-crawl-list(if blank done), send to non-blocking engine. (just an idea, ref [repo](https://github.com/rbarrois/xworkflows)) 
