@@ -1,12 +1,12 @@
 # SQL settings
-
+# TODO: get os.env to use docker pg
 DATABASE = {
     'drivername': 'postgres',
-    'host': 'localhost',
-    'port': 5432,
-    'username': 'root',
+    'host': '192.168.50.128',
+    'port': 25432,
+    'username': 'postgres',
     'password': '',
-    'database': 'test',
+    'database': 'postgres',
 }
 
 USERNAME = ''
