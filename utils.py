@@ -17,6 +17,7 @@ session_name = 'caixin.p'
 abs_path = os.path.realpath(__file__)
 session_path = abs_path.replace(__file__, session_name)
 
+
 def load_session_or_login():
     """
 
@@ -28,9 +29,13 @@ def load_session_or_login():
         # Get user's home page to verify:
         # - should contain cookies
         # - didn't timeout, get a new page to check
-        logged_in = session.get('http://user.caixin.com/')
-        if 'base_info' not in logged_in.text:
-            raise ValueError
+        try:
+            logged_in = session.get('http://user.caixin.com/', timeout=3)
+            if 'base_info' not in logged_in.text:
+                raise ValueError
+        except:
+            # network is slow, check connection
+            raise ArithmeticError
 
         return session
     except (TypeError, FileNotFoundError, ValueError):
