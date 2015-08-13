@@ -29,7 +29,7 @@ def load_session_or_login():
         # - should contain cookies
         # - didn't timeout, get a new page to check
         logged_in = session.get('http://user.caixin.com/')
-        if not 'base_info' in logged_in.text:
+        if 'base_info' not in logged_in.text:
             raise ValueError
 
         return session
