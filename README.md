@@ -15,7 +15,7 @@ Dependencies:
 
     pip install -r requirements.txt
     
-Username\&password: check Hackpad for the credentials, fill into `settings.py`.
+Username\&password: check Hackpad for the credentials, fill into `settings.py`.(DON'T commit it)
  
 Database: setup database environment, then fill into `settings.py`.
 
@@ -31,10 +31,16 @@ Ideally:
 
 * FIND A CODER!!
 
+* Database setup steps using Docker.
+
 * Actual spider code(WAT?) with incremental updating check(only fetch latest issue that not recorded locally)
 
 * Non-blocking mechanism
 
 * Ebook generation and push system
 
-* Introduce Workflow system for incremental updating: check Issue(if new parse new else check article), check articles(unfinished ones), generate to-crawl-list(if blank done), send to non-blocking engine. (just an idea, ref [repo](https://github.com/rbarrois/xworkflows)) 
+* Apply Workflow system to incremental updating: check Issue(if new parse new else check article), check articles(unfinished ones), generate to-crawl-list(if blank done), send to non-blocking engine. (just an idea, ref [repo](https://github.com/rbarrois/xworkflows))
+
+* Fix (hopefully) all FIXME(s) and TODO(s)
+
+* Organize README.md
