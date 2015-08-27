@@ -1,14 +1,26 @@
 # SQL settings
-# TODO: get os.env to use docker pg
+
+import os
+from password import USERNAME as username, PASSWORD as password
+
+USERNAME = username
+PASSWORD = password
+
+# for docker-machine user, there will be a environtment variable
+if 'DOCKER_HOST' in os.environ:
+    import re
+    ip_filter = re.compile('(?<=\/\/).*(?=:)')
+    ip = ip_filter.findall(os.environ['DOCKER_HOST'])
+    assert len(ip) == 1 # 
+else:
+    raise ValueError('Fill your database info')
+
 DATABASE = {
     'drivername': 'postgres',
-    'host': '192.168.50.128',
-    'port': 25432,
-    'username': 'postgres',
-    'password': '',
-    'database': 'postgres',
+    'host': ip[0],
+    'port': 15432,
+    'username': 'dbuser',
+    'password': 'dbpass',
+    'database': 'caixin',
 }
-
-USERNAME = ''
-PASSWORD = ''
 
