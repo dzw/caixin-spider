@@ -121,6 +121,7 @@ class Article(DeclarativeBase):
     #  - `id` is article id(looks unique, but still add 8-digit date for safe..)
     #  - `page=0` to get full text
     #  - `rand' is random.random(), totally optional.. guess it's just for fun?
+    title = Column(String, nullable=True)
     content = Column(String, nullable=True)
     content_plain_html = Column(String, nullable=True)
 
@@ -157,10 +158,9 @@ def test():
     engine = db_connect()
     create_tables(engine)
     from sqlalchemy.orm import sessionmaker
-    Session = sessionmaker(bind=rr)
+    Session = sessionmaker(bind=engine)
     session = Session()
-    aaa = Issue(id=1, publish_date='20150101',
-                title='java: the best programming language.')
+    aaa = Issue(id=1, publish_date='20150101')
     session.add(aaa)
     session.commit()
     # import ipdb; ipdb.set_trace()
@@ -168,4 +168,5 @@ def test():
     session.add(bbb)
     session.commit()
     session.query(Article)
+
 
