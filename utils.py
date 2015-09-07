@@ -7,10 +7,13 @@ Utils including:
 
 """
 from models import db_connect
+import logging
 import os
 import pickle
 import requests
 import settings
+
+log = logging.getLogger(__name__)
 
 # Save pickle session to the same folder as login.py
 session_name = 'caixin.p'
@@ -31,7 +34,9 @@ def load_session_or_login():
         # - didn't timeout, get a new page to check
         try:
             logged_in = session.get('http://user.caixin.com/', timeout=3)
-            if 'base_info' not in logged_in.text:
+            log.debug("session loaded with username {}".format(dict(session.cookies)['SA_USER_USER_NAME']))
+            import ipdb; ipdb.set_trace()
+            if 'Welcome' not in logged_in.text:
                 raise ValueError
         except:
             # network is slow, check connection
@@ -73,9 +78,8 @@ def login():
     # this POST would automatically set cookies for session
     k = session.post(login_url, data=data)
     logged_in = session.get('http://user.caixin.com/')
-    if 'SA_USER_auth' in k.headers['set-cookie'] \
-            and 'base_info' in logged_in.text:
-        # log.info('login succeed!')
+    if 'SA_USER_auth' in k.headers['set-cookie']:
+        log.info('user {} login succeed!'.format(data['username']))
         _logged = True
     else:
         raise OverflowError("BOMB! Didn't log in!")
