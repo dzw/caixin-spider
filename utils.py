@@ -7,9 +7,11 @@ Utils including:
 
 """
 from models import db_connect
+import asyncio
 import logging
 import os
 import pickle
+import re
 import requests
 import settings
 
@@ -19,6 +21,31 @@ log = logging.getLogger(__name__)
 session_name = 'caixin.p'
 abs_path = os.path.realpath(__file__)
 session_path = abs_path.replace(__file__, session_name)
+
+
+class CaixinRegex:
+
+    # Some regex that are used when scraping
+
+    # Issue link:
+    # - start in 'weekly' or 'magazine' followed up with `caixin`, 2010 - now
+    # those are founded in `http://weekly.caixin.com/`, in different format:
+    # http://weekly.caixin.com/2015/cw660/index.html <- CaiXinZhouKan
+    # http://magazine.caixin.com/2014/cw610/index.html <- XinShiJi
+    # without `index.html` it also works.
+    issue_2010_2015 = re.compile('wangqi[\s\S]*?gdqk')
+    issue_2010_2015_link = re.compile('http.*cw\d+\/')
+    issue_id = re.compile('(?<=cw)\d+')
+
+
+    # Article link:
+    # - new
+
+    # - old
+    # Cover article need a "view full article conversion"
+    # sample: http://magazine.caing.com/2010/cwcs422/
+    old_issue_link = re.compile('http.*?\d\d\d\d\d\d+\.html')
+    old_issue_date = re.compile('\d\d\d\d-\d\d-\d\d')
 
 
 def load_session_or_login():
@@ -35,7 +62,6 @@ def load_session_or_login():
         try:
             logged_in = session.get('http://user.caixin.com/', timeout=3)
             log.debug("session loaded with username {}".format(dict(session.cookies)['SA_USER_USER_NAME']))
-            import ipdb; ipdb.set_trace()
             if 'Welcome' not in logged_in.text:
                 raise ValueError
         except:
