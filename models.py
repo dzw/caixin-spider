@@ -16,6 +16,7 @@ from sqlalchemy import create_engine, Column, String, \
 from sqlalchemy.engine.url import URL
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import relationship, backref
+import re
 import settings
 
 from sqlalchemy.ext.declarative import declarative_base
@@ -129,13 +130,15 @@ class Article(DeclarativeBase):
     # articles under same issue and publish date
     relate_issue = Column(Integer, ForeignKey('issue.id'))
 
+    # After scraping mark this article as downloaded
+    downloaded = Column(Boolean, default=0)
+
     def update_content(self, session):
         """
 
         :param session: a logged_in requests session
         :return:
         """
-        import re
         # article_url = 'http://weekly.caixin.com/2015-07-10/100828041.html'
         article_url = self.url
         article_content = session.get(article_url)
@@ -170,3 +173,6 @@ def test():
     session.query(Article)
 
 
+def destroy_database():
+    #TODO:
+    pass
