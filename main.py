@@ -3,57 +3,50 @@
 Skeleton yet.
 
 """
+import asyncio
 import datetime
 import logging
-import re
-from models import db_connect, create_engine, insert_item, create_tables
+from models import Article
+from settings import db
 from utils import CaixinRegex
-from sqlalchemy.orm import sessionmaker
 from utils import load_session_or_login
-from workflow import Workflow, next_states, final_state
 
 log = logging.getLogger(__name__)
+logging.basicConfig(level='INFO')
 
 
-class SpiderWorkflow(Workflow):
+class Spider:
     '''
     Full workflow that performs incremental crawling
     '''
 
     def __init__(self):
-        super(SpiderWorkflow, self).__init__()
-        self._error = ''
 
+        # Issue links: ('http://magazine.caixin.com/2012/cw533/', ...)
         self.old_issues = set()
         self.new_issues = set()
+
+        # {date: [link], ...}
         self.articles = dict()
 
-        # TODO: issues and articles runner
+        # final articles to crawl: [link, ...]
+        self.articles_to_fetch = set()
 
-    @next_states('update_issues', initial=True)
     def init(self):
         """
         Check if network and database are working.
         """
         # Get requests.session
-        try:
-            self.session = load_session_or_login()
-        except ArithmeticError:
-            self._error = 'Network error!'
-            self.goto('error')
+        self.session = load_session_or_login()
 
-        # TODO:
-        # Either: Get existing database(check tables and columns)
-        # Or: Create new database according to models.py
-        # db_engine = db_connect()
-        # create_tables(db_engine)
-        # _session = sessionmaker(bind=db_engine)
-        # self.db_session = _session()
+        # Create index for mongo
+        db.articles.create_index('date')
+        db.articles.create_index('link')
+        db.articles.create_index('title')
 
-        # Run actual spider code non-blockingly
-        self.goto('update_issues')
+        db.issues.create_index('date')
+        db.issues.create_index('articles')
 
-    @next_states('parse_all_issues')
     def update_issues(self):
         """
         Fetch remote available issues and record locally.
@@ -77,80 +70,96 @@ class SpiderWorkflow(Workflow):
             self.old_issues.add(old_issue_format.format(year, month))
             start_date += datetime.timedelta(days=30)
 
-        self.goto('parse_old_issues')
-
-    def parse_old_issue(self, issue_link):
+    @asyncio.coroutine
+    def parse_single_issue(self, *, issue_link, old=False):
         """
         Parse single old issue like, return links
         :return dict monthly_articles: {'2006-06-26': [article link1, ...]}
         """
-        # TODO: Make this non-blockingly
-        page = self.session.get(issue_link)
+        page_response = self.session.get(issue_link)
+
+        if page_response.status_code == 200:
+            page = page_response.text
+        else:
+            raise ValueError("link {} did'n t give correct response")
+
+        if not old:
+            try:
+                page = CaixinRegex.new_issue_main_content.findall(page)[0]
+            except:
+                # issue in 2010 has no such a main content thing
+                pass
 
         # separate article by date
-        articles_in_this_month = CaixinRegex.old_issue_link.findall(page.text)
-        article_dates = set(CaixinRegex.old_issue_date.findall(page.text))
+        articles_in_this_month = CaixinRegex.old_issue_link.findall(page)
+        article_dates = set(CaixinRegex.old_issue_date.findall(page))
         monthly_articles = {date: [link for link in articles_in_this_month if date in link] for date in article_dates}
-        return monthly_articles
 
-    @next_states('parse_new_issues')
-    def parse_old_issues(self):
+        # Delete blank date
+        valid_monthly_articles = {date: monthly_articles[date] for date in monthly_articles if monthly_articles[date]}
+        for date in valid_monthly_articles:
+            articles = valid_monthly_articles[date]
+            log.info('Date {}: {} articles.'.format(date, len(articles)))
+            if date in self.articles:
+                self.articles[date] += articles
+            else:
+                self.articles[date] = articles
+
+    def parse_issues(self):
         """
         Check if any old issue has no articles inside(by month?!)
         """
-        # TODO: Make this non-blockingly
-        for old_issue_link in list(self.old_issues)[:2]:
-            articles_in_that_month = self.parse_old_issue(old_issue_link)
-            self.articles.update(articles_in_that_month)
+        f1 = asyncio.wait([self.parse_single_issue(issue_link=old_issue_link, old=True)
+                           for old_issue_link in list(self.old_issues)[:20]])
 
-        self.goto('parse_new_issues')
+        f2 = asyncio.wait([self.parse_single_issue(issue_link=new_issue_link)
+                           for new_issue_link in list(self.new_issues)[:20]])
 
-    @next_states('update_articles')
-    def parse_new_issues(self):
-        """
-        test
-        """
-        # if any article in any issue has not been downloaded yet
-        # will pass [articles to fetch] to next state
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(f1)
+        loop.run_until_complete(f2)
 
-        # Loop over every issue's link
-        # TODO: asynchronously do this
-        # TODO: maybe add a runner when __init__
-        # TODO: move this function to somewhere else, make the workflow clean
-        # 1. update existing issues with info: publish date, title(the cover article), ...
-        # 2. access url of each issue: a navigation to their article links
-        # 3. check article link if in database then, check if downloaded, if so skip
-        # 4. else append new row to Articles Table, goto next stage
-        self.goto('update_articles')
+    def generate_downloading_items(self):
+        # check article link if in database then, check if downloaded, if so skip
+        # TODO: check article length
 
-    @next_states('generate_ebook')
+        for date in self.articles:
+            articles = self.articles[date]
+            for link in articles:
+                article_exist = db.articles.find_one({'link': link})
+                if not article_exist:
+                    self.articles_to_fetch.add(link)
+
+                elif article_exist['length'] == 0:
+                    log.error('Article {} has length of 0'.format(link))
+
+        log.info('{} new articles to fetch.'.format(len(self.articles_to_fetch)))
+
     def update_articles(self):
-        # TODO: asynchoronously do this too, might contain lots of articles
-        # for each article.. 
-        # 
-        self.goto('generate_ebook')
+        # asyncio.wait will warp coroutines into Tasks, which would be
+        # executed non-blockingly
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(asyncio.wait(
+            [Article(link=link, session=self.session).save() for link in self.articles_to_fetch])
+        )
+        loop.close()
 
-    @next_states('done')
     def generate_ebook(self):
         # Generate ebooks and push to subscribers' kindle
 
         # TODO:
         # Maintain subscribers and their state
         # Incrementally send ebook of each issue to their inbox
-
-        self.goto('done')
-
-    @final_state
-    def done(self):
-        print(self.seen_states)
-        print('done')
         pass
 
-    @final_state
-    def error(self):
-        log.error(self._error)
-
+    def run(self):
+        self.init()
+        self.update_issues()
+        self.parse_issues()
+        self.generate_downloading_items()
+        self.update_articles()
+        self.generate_ebook()
 
 if __name__ == '__main__':
-    spider = SpiderWorkflow()
+    spider = Spider()
     spider.run()
