@@ -47,6 +47,8 @@ class Spider:
         db.issues.create_index('date')
         db.issues.create_index('articles')
 
+        db.not_found_articles.create_index('link')
+
     def update_issues(self):
         """
         Fetch issue links of 2010.1 - now, generate links from 1998.4 - 2009.11
@@ -58,10 +60,10 @@ class Spider:
         new_issue_links = CaixinRegex.issue_2010_2015_link.findall(new_issues)
 
         # The latest issue is not there, so manually add it
-        last_issue =  new_issue_links[0]
-        last_issue_id =  CaixinRegex.issue_id.findall(last_issue)[0]
-        latest_issue_id =  int(CaixinRegex.issue_id.findall(last_issue)[0]) + 1
-        latest_issue_link =  last_issue.replace(last_issue_id,  str(latest_issue_id))
+        last_issue = new_issue_links[0]
+        last_issue_id = CaixinRegex.issue_id.findall(last_issue)[0]
+        latest_issue_id = int(CaixinRegex.issue_id.findall(last_issue)[0]) + 1
+        latest_issue_link = last_issue.replace(last_issue_id,  str(latest_issue_id))
         self.new_issues = set(new_issue_links)
         self.new_issues.add(latest_issue_link)
 
@@ -105,7 +107,7 @@ class Spider:
         # Append links into self.articles
         for date in valid_monthly_articles:
             articles = valid_monthly_articles[date]
-            log.info('Date {}: {} articles.'.format(date, len(articles)))
+            log.debug('Date {}: {} articles.'.format(date, len(articles)))
             if date in self.articles:
                 self.articles[date] += articles
             else:
@@ -142,6 +144,11 @@ class Spider:
                 elif article_exist['length'] == 0:
                     log.error('Article {} has length of 0'.format(link))
 
+                # confirmed 404 articles should be removed
+                confirmed_404 = db.not_found_articles.find_one({'link': link})
+                if confirmed_404 and confirmed_404['confirmed']:
+                    self.articles_to_fetch.remove(link)
+
         log.info('{} new articles to fetch.'.format(len(self.articles_to_fetch)))
 
     def update_articles(self):
@@ -170,6 +177,9 @@ class Spider:
         self.generate_downloading_items()
         self.update_articles()
         self.generate_ebook()
+        log.info('Done. {} issues, {} articles, {} 404 articles in total!'.format(
+            db.issues.count(), db.articles.count(), db.not_found_articles.count()
+        ))
 
 if __name__ == '__main__':
     spider = Spider()

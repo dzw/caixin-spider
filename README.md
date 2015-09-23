@@ -30,10 +30,6 @@ After installed MongoDB, run these commands:
 
 * alternatives for `lxml` package? (bit troublesome to install in new Ubuntu)
 
-* Validate local contents for `to-fetch-links`
-
 * Improve speed
 
 * Ebook generation and push system
-
-* Fix (hopefully) all FIXME(s) and TODO(s)

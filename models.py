@@ -94,9 +94,15 @@ class Article:
         if db.articles.find({'link': self.link}).count() == 0:
             article_json = yield from self.to_json()
 
-            # Skip 404
+            # if 404 twice, article would be save to db.not_found_articles
             if article_json['length'] < 5:
-                log.info('Article {} seems to be 404, check if true.'.format(self.link))
+                log.debug('Article {} seems to be 404, check if true.'.format(self.link))
+                if db.not_found_articles.find({'link': self.link}).count() == 0:
+                    db.not_found_articles.insert_one({'link': self.link, 'confirmed': 0})
+                else:
+                    db.not_found_articles.update({'link': self.link}, {'$set': {
+                        'confirmed': 1}
+                    })
                 return True
 
             db.articles.insert_one(article_json)
