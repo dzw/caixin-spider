@@ -19,7 +19,7 @@ Packages:
 
 ## Run
 
-After fulfill prerequisites, run these commands:
+After installed MongoDB, run these commands:
 
     python3 -m venv ../.env/"${PWD##*/}"
     source ../.env/"${PWD##*/}"/bin/activate
