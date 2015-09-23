@@ -6,8 +6,6 @@ Utils including:
  - database check and create
 
 """
-from models import db_connect
-import asyncio
 import logging
 import os
 import pickle
@@ -37,15 +35,21 @@ class CaixinRegex:
     issue_2010_2015_link = re.compile('http.*cw\d+\/')
     issue_id = re.compile('(?<=cw)\d+')
 
-
     # Article link:
     # - new
+    new_issue_main_content = re.compile('(?<=class="mainMagContent">)[\s\S]*?(?=bottom)')
 
     # - old
     # Cover article need a "view full article conversion"
     # sample: http://magazine.caing.com/2010/cwcs422/
     old_issue_link = re.compile('http.*?\d\d\d\d\d\d+\.html')
     old_issue_date = re.compile('\d\d\d\d-\d\d-\d\d')
+
+    # Content:
+    article_id = re.compile('\d\d\d\d\d+')
+    article_title = re.compile('(?<=<h1>)[\s\S]*?(?=</h1>)')
+    content_link = 'http://tag.caixin.com/news/NewsV51.jsp?id={}&page=1&rand={}'
+    article_content = re.compile('(?<=resetContentInfo\()[\s\S]*(?=\);)')
 
 
 def load_session_or_login():
@@ -69,11 +73,13 @@ def load_session_or_login():
             raise ArithmeticError
 
         return session
+
     except (TypeError, FileNotFoundError, ValueError):
         # TypeError: didn't use open(filename, 'rb')
         # FileNotFoundError: file not found
         # ValueError: didn't use python3, unsupported pickle protocol;
         #  or just lost login session.
+        log.debug('No pickle found, will log in now...')
         return login()
 
 
