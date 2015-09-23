@@ -1,178 +1,131 @@
-"""
+from lxml.html.clean import Cleaner
+from settings import db, sign_of_404
+from utils import CaixinRegex
+import logging
+import random
+import asyncio
 
-ORM is used for convenience.
-
-Database usage:
- - db_connect: validate settings
- - create_table: in case first time open
- - get session: see insert_item(),
-    ref -> http://docs.sqlalchemy.org/en/rel_1_0/orm/session.html
- - use this session to add and commit new sql_item
-
-"""
-
-from sqlalchemy import create_engine, Column, String, \
-    Integer, Boolean, DateTime, ForeignKey
-from sqlalchemy.engine.url import URL
-from sqlalchemy.exc import OperationalError
-from sqlalchemy.orm import relationship, backref
-import re
-import settings
-
-from sqlalchemy.ext.declarative import declarative_base
-DeclarativeBase = declarative_base()
+log = logging.getLogger(__name__)
+cleaner = Cleaner(allow_tags=['p'], remove_unknown_tags=False)
 
 
-def db_connect():
-    """
-    Validate database settings and
-    :return: a METHOD to create session, usage(after get return):
-      session = Session()
+class Article:
 
-    """
-    # TODO: need to check/increase available pool size?
-    engine = create_engine(URL(**settings.DATABASE))
+    def __init__(self, *, link, session):
+        # link: http://magazine.caixin.com/2013-10-11/100590480.html
+        # date: yyyy-mm-dd
+        # content: requests.get(link).text, smartly decoded text
+        self.link = link
+        self.date = CaixinRegex.old_issue_date.findall(link)[0]
+        self.content = None
+        self.id = self.date.replace('-', '') + CaixinRegex.article_id.findall(self.link)[0]
+        self.session = session
 
-    try:
-        engine.connect()
-        engine.dispose()
-    except (OperationalError, ):
-        raise ValueError("Check database settings!")
+    @asyncio.coroutine
+    def download(self):
+        # Construct download link
+        article_id = CaixinRegex.article_id.findall(self.link)[0]
+        content_link = CaixinRegex.content_link.format(article_id, random.random())
 
-    return engine
+        # subtract json from javascript response
+        # which contains: current page, media count, total page count
+        contents = self.session.get(content_link)
 
-def create_tables(engine):
-    """
-    Initialize database, WON'T break existing data.
-    This actions take some time(about 0.015~0.02s), so make it happen once,
-    only when start crawling.
-    """
-    DeclarativeBase.metadata.create_all(engine)
+        # Deal with 404
+        if sign_of_404 in contents.text:
+            return ''
 
-def insert_item(session, sql_item):
-    """
-    from sqlalchemy.orm import sessionmaker
-    Session = sessionmaker(bind=engine)
-    session = Session()
+        # If any content
+        try:
+            contents_json = eval(CaixinRegex.article_content.findall(contents.text)[0])
+        except:
+            log.error(contents.text)
+            contents_json = {'totalPage': 1, 'content': ''}
 
-    :param session:
-    :param sql_item: Issue or Article
-    :return:
-    """
-    try:
-        session.add(sql_item)
-        session.commit()
-    except:
-        session.rollback()
-        raise
-    finally:
-        session.close()
+        # If page is split into more than 1, it should be revealed in the json
+        # However, sometimes it is 0 ...
+        if contents_json['totalPage'] > 1 or \
+                (contents_json['totalPage'] != 1 and not contents_json['content']):
+            content_link = content_link.replace('page=1', 'page=0')
+            contents = self.session.get(content_link)
+            contents_json = eval(CaixinRegex.article_content.findall(contents.text)[0])
 
-class Issue(DeclarativeBase):
+        log.debug('Article {} has been downloaded'.format(self.link))
+        # assert len(contents_json['content']) > 0
 
-    __tablename__ = 'issue'
+        return contents_json['content']
 
-    # Example: http://weekly.caixin.com/2015/cw658/index.html
-    # 豪门与“山寨”之盟 <- Cover story
-    # 2015年6月29日出版 <- publish_date
-    # 总期号：660 <- id
+    @asyncio.coroutine
+    def get_title(self):
+        page = self.session.get(self.link)
+        title = CaixinRegex.article_title.findall(page.text)
+        if not title:
+            log.debug('>>> article {} has no title'.format(self.link))
+            title = ['Untitled']
+        return title[0]
 
-    id = Column(Integer, primary_key=True)
-    publish_date = Column(DateTime)
-    cover_story = Column(String)
-    url = Column(String)
+    @asyncio.coroutine
+    def to_json(self):
+        self.content = yield from self.download()
+        title = yield from self.get_title()
 
-    # TODO: make sure this works for both direction, get articles under issue
-    # and get issue from article.
+        # With only html tag <p> (and unknown tags) left
+        # 404 blank string would raise lxml.etree.ParserError, too lazy to import
+        try:
+            cleaned_text = cleaner.clean_html(self.content)
+            cleaned_text = cleaned_text.replace('\u3000', ' ')
+        except:
+            cleaned_text = self.content
 
-    # - issue = someIssue()
-    # - issue.articles.all()
+        article_json = {
+            '_id': self.id,
+            'link': self.link,
+            'date': self.date,
+            'content': cleaned_text,
+            'content_html': self.content,
+            'length': len(self.content),
+            'title': title,
+        }
+        return article_json
 
-    # - article = someArticle()
-    # - article.relate_issue.articles.all()
+    @asyncio.coroutine
+    def save(self):
+        # Save to 2 tables: article, issue
+        if db.articles.find({'link': self.link}).count() == 0:
+            article_json = yield from self.to_json()
 
-    # ref: http://stackoverflow.com/questions/7420670/how-do-i-access-the-related-foreignkey-object-from-a-object-in-sqlalchemy
-    # ref: http://docs.sqlalchemy.org/en/rel_1_0/orm/relationships.html
-    articles = relationship('Article', backref='issue')
+            # Skip 404
+            if article_json['length'] < 5:
+                log.info('Article {} seems to be 404, check if true.'.format(self.link))
+                return True
 
-    def next_issue(self):
-        pass
+            db.articles.insert_one(article_json)
+            log.info('Article {} of date {} saved to database'.format(
+                self.link, self.date))
 
-    def previous_issue(self):
-        pass
+            # Issues table will be updated with appended article links
+            # each issue: {'id': ..., 'date': ..., 'articles': [...]}
+            if db.issues.find({'date': self.date}).count() == 0:
+                log.debug('Issue {} created'.format(self.date))
+                db.issues.insert_one({'date': self.date, 'articles': [self.link]})
+            else:
+                current_issue = db.issues.find_one({'date': self.date})
+                articles_on_current_issue = current_issue['articles']
+                old_articles_count = len(articles_on_current_issue)
+                articles_on_current_issue.append(self.link)
+                db.issues.update({'date': self.date}, {'$set': {
+                    'articles': articles_on_current_issue}
+                })
+                log.debug('updated issue {}, from {} articles to {}'.format(
+                    self.date, old_articles_count, old_articles_count + 1))
 
+        # If already founded in database
+        else:
+            log.debug('Article {} is already in database'.format(self.link))
 
-class Article(DeclarativeBase):
-
-    __tablename__ = 'article'
-
-    # Example:
-    # http://weekly.caixin.com/[2015-01-02]/[100770279].html
-
-    # id = 20150102100770279, date + id
-    id = Column(Integer, primary_key=True)
-    url = Column(String)
-
-    abstract = Column(String, nullable=True)
-    author = Column(String, nullable=True)
-
-    # Origin article content is in json: {'content': content, ...}
-    # http://tag.caixin.com/news/NewsV51.jsp?id=100828060&page=0&rand=0.945020263781771
-    # where:
-    #  - `id` is article id(looks unique, but still add 8-digit date for safe..)
-    #  - `page=0` to get full text
-    #  - `rand' is random.random(), totally optional.. guess it's just for fun?
-    title = Column(String, nullable=True)
-    content = Column(String, nullable=True)
-    content_plain_html = Column(String, nullable=True)
-
-    # TODO: convenient 1-to-many query for both
-    # articles under same issue and publish date
-    relate_issue = Column(Integer, ForeignKey('issue.id'))
-
-    # After scraping mark this article as downloaded
-    downloaded = Column(Boolean, default=0)
-
-    def update_content(self, session):
-        """
-
-        :param session: a logged_in requests session
-        :return:
-        """
-        # article_url = 'http://weekly.caixin.com/2015-07-10/100828041.html'
-        article_url = self.url
-        article_content = session.get(article_url)
-        java = session.get('http://tag.caixin.com/news/NewsV51.jsp?id=100828060&page=0&rand=0.4237610185518861')
-        article_content_re = re.compile('(?<=resetContentInfo\()[\s\S]*(?=\);)')
-
-        # content
-        article = eval(article_content_re.findall(article_content.text)[0])['content']
-
-        # Clean html to text, leave only <p> tag
-        from lxml.html.clean import Cleaner
-        cleaner = Cleaner(allow_tags=['p'], remove_unknown_tags=False)
-        cleaned_text = cleaner.clean_html(article)
-        cleaned_text = cleaned_text.replace('\u3000', ' ') # content_plain_html
-
-
-
-def test():
-
-    engine = db_connect()
-    create_tables(engine)
-    from sqlalchemy.orm import sessionmaker
-    Session = sessionmaker(bind=engine)
-    session = Session()
-    aaa = Issue(id=1, publish_date='20150101')
-    session.add(aaa)
-    session.commit()
-    # import ipdb; ipdb.set_trace()
-    bbb = Article(id='2', url='123', content='123', relate_issue=1)
-    session.add(bbb)
-    session.commit()
-    session.query(Article)
+        return True
 
 
 def destroy_database():
-    #TODO:
-    pass
+    db.articles.drop()
+    db.issues.drop()
