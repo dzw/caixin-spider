@@ -109,10 +109,10 @@ class Spider:
         Feed all articles into dict self.articles
         """
         f1 = asyncio.wait([self.parse_single_issue(issue_link=old_issue_link, old=True)
-                           for old_issue_link in list(self.old_issues)[:1]])
+                           for old_issue_link in self.old_issues])
 
         f2 = asyncio.wait([self.parse_single_issue(issue_link=new_issue_link)
-                           for new_issue_link in list(self.new_issues)[:1]])
+                           for new_issue_link in self.new_issues])
 
         loop = asyncio.get_event_loop()
         loop.run_until_complete(f1)
