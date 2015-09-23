@@ -56,7 +56,14 @@ class Spider:
         # Part 1: 2010 - now
         new_issues = CaixinRegex.issue_2010_2015.findall(weekly_home_page.text)[0]
         new_issue_links = CaixinRegex.issue_2010_2015_link.findall(new_issues)
+
+        # The latest issue is not there, so manually add it
+        last_issue =  new_issue_links[0]
+        last_issue_id =  CaixinRegex.issue_id.findall(last_issue)[0]
+        latest_issue_id =  int(CaixinRegex.issue_id.findall(last_issue)[0]) + 1
+        latest_issue_link =  last_issue.replace(last_issue_id,  str(latest_issue_id))
         self.new_issues = set(new_issue_links)
+        self.new_issues.add(latest_issue_link)
 
         # Part 2: 1998.4 - 2009.11
         # Format: http://magazine.caixin.com/h/1998-04.html
