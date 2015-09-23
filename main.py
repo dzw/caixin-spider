@@ -49,9 +49,7 @@ class Spider:
 
     def update_issues(self):
         """
-        Fetch remote available issues and record locally.
-
-        :return:
+        Fetch issue links of 2010.1 - now, generate links from 1998.4 - 2009.11
         """
         weekly_home_page = self.session.get("http://weekly.caixin.com/")
 
@@ -73,8 +71,7 @@ class Spider:
     @asyncio.coroutine
     def parse_single_issue(self, *, issue_link, old=False):
         """
-        Parse single old issue like, return links
-        :return dict monthly_articles: {'2006-06-26': [article link1, ...]}
+        Parse single issue link, append links to self.articles
         """
         page_response = self.session.get(issue_link)
 
@@ -90,13 +87,15 @@ class Spider:
                 # issue in 2010 has no such a main content thing
                 pass
 
-        # separate article by date
+        # separate article by date: {'2006-06-26': [article link1, ...]}
         articles_in_this_month = CaixinRegex.old_issue_link.findall(page)
         article_dates = set(CaixinRegex.old_issue_date.findall(page))
         monthly_articles = {date: [link for link in articles_in_this_month if date in link] for date in article_dates}
 
-        # Delete blank date
+        # Delete date with no articles
         valid_monthly_articles = {date: monthly_articles[date] for date in monthly_articles if monthly_articles[date]}
+
+        # Append links into self.articles
         for date in valid_monthly_articles:
             articles = valid_monthly_articles[date]
             log.info('Date {}: {} articles.'.format(date, len(articles)))
@@ -107,13 +106,13 @@ class Spider:
 
     def parse_issues(self):
         """
-        Check if any old issue has no articles inside(by month?!)
+        Feed all articles into dict self.articles
         """
         f1 = asyncio.wait([self.parse_single_issue(issue_link=old_issue_link, old=True)
-                           for old_issue_link in list(self.old_issues)[:20]])
+                           for old_issue_link in list(self.old_issues)[:1]])
 
         f2 = asyncio.wait([self.parse_single_issue(issue_link=new_issue_link)
-                           for new_issue_link in list(self.new_issues)[:20]])
+                           for new_issue_link in list(self.new_issues)[:1]])
 
         loop = asyncio.get_event_loop()
         loop.run_until_complete(f1)
@@ -121,7 +120,10 @@ class Spider:
 
     def generate_downloading_items(self):
         # check article link if in database then, check if downloaded, if so skip
-        # TODO: check article length
+        # no need to check article length, for example:
+        # http://weekly.caixin.com/2015-07-03/100824881.html has length of only 128..
+
+        # Result in self.articles_to_fetch, a list
 
         for date in self.articles:
             articles = self.articles[date]
@@ -136,6 +138,8 @@ class Spider:
         log.info('{} new articles to fetch.'.format(len(self.articles_to_fetch)))
 
     def update_articles(self):
+        # Download all articles_to_fetch
+
         # asyncio.wait will warp coroutines into Tasks, which would be
         # executed non-blockingly
         loop = asyncio.get_event_loop()
