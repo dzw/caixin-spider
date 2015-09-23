@@ -157,9 +157,15 @@ class Spider:
         # asyncio.wait will warp coroutines into Tasks, which would be
         # executed non-blockingly
         loop = asyncio.get_event_loop()
-        loop.run_until_complete(asyncio.wait(
-            [Article(link=link, session=self.session).save() for link in self.articles_to_fetch])
-        )
+
+        try:
+            loop.run_until_complete(asyncio.wait(
+                [Article(link=link, session=self.session).save() for link in self.articles_to_fetch])
+            )
+        except ValueError:
+            # ValueError: Set of coroutines/Futures is empty.
+            log.info('No new articles yet.')
+
         loop.close()
 
     def generate_ebook(self):
