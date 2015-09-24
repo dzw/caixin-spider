@@ -1,8 +1,3 @@
-""
-
-Skeleton yet.
-
-"""
 import asyncio
 import datetime
 import logging
