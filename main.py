@@ -1,4 +1,4 @@
-"""
+""
 
 Skeleton yet.
 
@@ -6,6 +6,7 @@ Skeleton yet.
 import asyncio
 import datetime
 import logging
+import requests
 from models import Article
 from settings import db
 from utils import CaixinRegex
@@ -38,6 +39,7 @@ class Spider:
         """
         # Get requests.session
         self.session = load_session_or_login()
+        self.session.mount('http://', requests.adapters.HTTPAdapter(pool_connections=100, pool_maxsize=100))
 
         # Create index for mongo
         db.articles.create_index('date')
