@@ -1,4 +1,10 @@
-from lxml.html.clean import Cleaner
+try:
+    from lxml.html.clean import Cleaner
+    cleaner = Cleaner(allow_tags=['p'], remove_unknown_tags=False)
+except ImportError:
+    def cleaner(something):
+        return something
+
 from settings import db, sign_of_404
 from utils import CaixinRegex
 import logging
@@ -6,7 +12,6 @@ import random
 import asyncio
 
 log = logging.getLogger(__name__)
-cleaner = Cleaner(allow_tags=['p'], remove_unknown_tags=False)
 
 
 class Article:

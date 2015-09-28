@@ -17,11 +17,13 @@ Packages:
     USERNAME = 'some_username'
     PASSWORD = 'some_password'
 
+If you want to clean html, install `lxml` package by yourself, confirm using `from lxml.html.clean import Cleaner`.
+
 ## Run
 
 After installed MongoDB, run these commands:
 
-    python3 -m venv ../.env/"${PWD##*/}"
+    python3 -m venv ../.env/"${PWD##*/}"  # virtualenv -p /usr/bin/python3 ../.env/caixin-spider
     source ../.env/"${PWD##*/}"/bin/activate
     pip install -r requirements.txt
     python main.py
@@ -32,8 +34,25 @@ RSS feed location is by default the same folder as `main.py`, specify custom loc
 
     XML_DIR = '/usr/share/nginx'
 
-## TODO
+## Run on Debian 7
 
-* alternatives for `lxml` package? (bit troublesome to install in new Ubuntu)
+Debian 7 currently have default python version of 3.2, the project used some grammer that requires higher version, thus `pyenv` is recommended:
+
+    curl -L https://raw.githubusercontent.com/yyuu/pyenv-installer/master/bin/pyenv-installer | bash
+    echo 'export PATH="$HOME/.pyenv/bin:$PATH"' >> ~/.bashrc
+    echo 'eval "$(pyenv init -)"' >> ~/.bashrc
+    echo 'eval "$(pyenv virtualenv-init -)"' >> ~/.bashrc
+    source ~/.bashrc
+
+    pyenv install 3.4.3
+    pyenv virtualenv 3.4.3 ../.env/"${PWD##*/}"
+    pyenv shell "${PWD##*/}"
+
+    pip install -r requirements.txt
+    python main.py
+
+Remain commands are the same as above.
+
+## TODO
 
 * Improve speed
