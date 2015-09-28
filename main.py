@@ -205,7 +205,7 @@ class Spider:
             items=rss_items,
         )
 
-        with open(xml_path, "w") as rss_path:
+        with open(xml_path, "wb") as rss_path:
             rss.write_xml(rss_path)
 
     def run(self):
