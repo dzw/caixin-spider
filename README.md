@@ -1,6 +1,6 @@
 # Crawler for Caixin Weekly
 
-Incrementally/non-blockingly crawl articles from 1998.4 till now, using python3 and mongodb.
+Incrementally/non-blockingly crawl articles from 1998.4 till now, using python3 and mongodb, then generate RSS feed for later use.
 
 ## Prerequisites
 
@@ -26,10 +26,14 @@ After installed MongoDB, run these commands:
     pip install -r requirements.txt
     python main.py
 
+If you want articles from 1998 to 2009, change `self.fetch_old_articles` to `True` in `main.py`.
+
+RSS feed location is by default the same folder as `main.py`, specify custom location in `settings.py` to overwrite it:
+
+    XML_DIR = '/usr/share/nginx'
+
 ## TODO
 
 * alternatives for `lxml` package? (bit troublesome to install in new Ubuntu)
 
 * Improve speed
-
-* Ebook generation and push system

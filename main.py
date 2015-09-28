@@ -1,11 +1,14 @@
 import asyncio
 import datetime
 import logging
+import os
+import PyRSS2Gen
 import requests
 from models import Article
 from settings import db
 from utils import CaixinRegex
 from utils import load_session_or_login
+from settings import XML_DIR
 
 log = logging.getLogger(__name__)
 logging.basicConfig(level='INFO')
@@ -22,11 +25,17 @@ class Spider:
         self.old_issues = set()
         self.new_issues = set()
 
+        # By default it won't go back to 1998
+        self.fetch_old_articles = False
+
         # {date: [link], ...}
         self.articles = dict()
 
         # final articles to crawl: [link, ...]
         self.articles_to_fetch = set()
+
+        # Latest issue link to generate rss
+        self.latest_issue_date = None
 
     def init(self):
         """
@@ -64,15 +73,21 @@ class Spider:
         self.new_issues = set(new_issue_links)
         self.new_issues.add(latest_issue_link)
 
+        # Also add its date for later RSS generation
+        cover = CaixinRegex.cover.findall(weekly_home_page.text)[0]
+        latest_issue_date = CaixinRegex.old_issue_date.findall(cover)[0]
+        self.latest_issue_date = latest_issue_date
+
         # Part 2: 1998.4 - 2009.11
         # Format: http://magazine.caixin.com/h/1998-04.html
-        old_issue_format = 'http://magazine.caixin.com/h/{}-{}.html'
-        start_date = datetime.date(1998, 4, 1)
-        end_date = datetime.date(2009, 11, 2)
-        while start_date < end_date:
-            year, month = start_date.year, str(start_date.month).zfill(2)
-            self.old_issues.add(old_issue_format.format(year, month))
-            start_date += datetime.timedelta(days=30)
+        if self.fetch_old_articles:
+            old_issue_format = 'http://magazine.caixin.com/h/{}-{}.html'
+            start_date = datetime.date(1998, 4, 1)
+            end_date = datetime.date(2009, 11, 2)
+            while start_date < end_date:
+                year, month = start_date.year, str(start_date.month).zfill(2)
+                self.old_issues.add(old_issue_format.format(year, month))
+                start_date += datetime.timedelta(days=30)
 
     @asyncio.coroutine
     def parse_single_issue(self, *, issue_link, old=False):
@@ -121,7 +136,8 @@ class Spider:
                            for new_issue_link in self.new_issues])
 
         loop = asyncio.get_event_loop()
-        loop.run_until_complete(f1)
+        if self.fetch_old_articles:
+            loop.run_until_complete(f1)
         loop.run_until_complete(f2)
 
     def generate_downloading_items(self):
@@ -165,13 +181,32 @@ class Spider:
 
         loop.close()
 
-    def generate_ebook(self):
-        # Generate ebooks and push to subscribers' kindle
+    def generate_feed(self):
+        xml_path = os.path.join(XML_DIR, 'caixin_rss.xml')
 
-        # TODO:
-        # Maintain subscribers and their state
-        # Incrementally send ebook of each issue to their inbox
-        pass
+        # Find latest articles and convert into rss format
+        articles_of_this_issue = list(db.articles.find({'date': self.latest_issue_date}))
+        for article in articles_of_this_issue:
+            article['description'] = article['content_html']
+            article['pubDate'] = datetime.datetime.strptime(article['date'], '%Y-%m-%d')
+            del article['date']
+            del article['content']
+            del article['content_html']
+            del article['_id']
+            del article['length']
+
+        rss_items = [PyRSS2Gen.RSSItem(**item) for item in articles_of_this_issue]
+
+        rss = PyRSS2Gen.RSS2(
+            title="Caixin Weekly",
+            link="Somewhere",
+            description="Caixin Weekly full text",
+            lastBuildDate=datetime.datetime.now(),
+            items=rss_items,
+        )
+
+        with open(xml_path, "w") as rss_path:
+            rss.write_xml(rss_path)
 
     def run(self):
         self.init()
@@ -179,7 +214,7 @@ class Spider:
         self.parse_issues()
         self.generate_downloading_items()
         self.update_articles()
-        self.generate_ebook()
+        self.generate_feed()
         log.info('Done. {} issues, {} articles, {} 404 articles in total!'.format(
             db.issues.count(), db.articles.count(), db.not_found_articles.count()
         ))

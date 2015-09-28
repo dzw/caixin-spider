@@ -38,6 +38,8 @@ class CaixinRegex:
     # Article link:
     # - new
     new_issue_main_content = re.compile('(?<=class="mainMagContent">)[\s\S]*?(?=bottom)')
+    # - cover article of latest issue
+    cover = re.compile('(?<=tit>)[\s\S]*?(?=\/dt)')
 
     # - old
     # Cover article need a "view full article conversion"
