@@ -198,7 +198,7 @@ class Spider:
         rss_items = [PyRSS2Gen.RSSItem(**item) for item in articles_of_this_issue]
 
         rss = PyRSS2Gen.RSS2(
-            title="Caixin Weekly",
+            title="Caixin Weekly {}".format(self.latest_issue_date),
             link="Somewhere",
             description="Caixin Weekly full text",
             lastBuildDate=datetime.datetime.now(),
