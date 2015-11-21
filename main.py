@@ -132,7 +132,6 @@ class Spider:
         count = 0
         current_task = []
         threshold = min(len(tasks), soft) * 0.5
-        print(threshold)
         for task in tasks:
             current_task.append(task)
             count += 1
