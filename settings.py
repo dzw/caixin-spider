@@ -19,3 +19,6 @@ db = client.caixin
 
 # 404 sign
 sign_of_404 = '<title>404_'
+
+# aiohttp.Session connection limit
+conn_limit = 30
