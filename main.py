@@ -3,6 +3,8 @@ import datetime
 import logging
 import os
 import PyRSS2Gen
+import resource
+
 from models import Article
 from settings import db
 from utils import CaixinRegex
@@ -94,9 +96,8 @@ class Spider:
         """
         Parse single issue link, append links to self.articles
         """
-        page_response = yield from self.session.get(issue_link)
-        page = yield from page_response.read_and_close()
-        page = page.decode('utf-8')
+        page_response = yield from get_body(self.session, issue_link)
+        page = page_response.decode('utf-8')
 
         if not old:
             try:
@@ -122,19 +123,51 @@ class Spider:
             else:
                 self.articles[date] = articles
 
+    def run_under_limit(self, tasks, task_type):
+        """
+        type could be issue/article
+        This function gets `ulimit -n` and tries to work under the constraint
+        """
+        soft, _ = resource.getrlimit(resource.RLIMIT_NOFILE)
+        count = 0
+        current_task = []
+        threshold = min(len(tasks), soft) * 0.5
+        print(threshold)
+        for task in tasks:
+            current_task.append(task)
+            count += 1
+            if count >= threshold:
+                if task_type == 'issue':
+                    future = asyncio.wait([self.parse_single_issue(issue_link=task, old=True)
+                                           for task in current_task])
+                elif task_type == 'article':
+                    future = asyncio.wait([Article(link=link, session=self.session).save()
+                                           for link in current_task])
+                else:
+                    raise TypeError("Unsupported type.")
+                self.loop.run_until_complete(future)
+                current_task = []
+
+        # Remaining tasks
+        if current_task:
+            if task_type == 'issue':
+                future = asyncio.wait([self.parse_single_issue(issue_link=task, old=True)
+                                           for task in current_task])
+            elif task_type == 'article':
+                future = asyncio.wait([Article(link=link, session=self.session).save()
+                                           for link in current_task])
+            else:
+                raise TypeError("Unsupported type.")
+            self.loop.run_until_complete(future)
+
     def parse_issues(self):
         """
         Feed all articles into dict self.articles
         """
-        f1 = asyncio.wait([self.parse_single_issue(issue_link=old_issue_link, old=True)
-                           for old_issue_link in self.old_issues])
-
-        f2 = asyncio.wait([self.parse_single_issue(issue_link=new_issue_link)
-                           for new_issue_link in self.new_issues])
 
         if self.fetch_old_articles:
-            self.loop.run_until_complete(f1)
-        self.loop.run_until_complete(f2)
+            self.run_under_limit(self.old_issues, task_type='issue')
+        self.run_under_limit(self.new_issues, task_type='issue')
 
     def generate_downloading_items(self):
         # check article link if in database then, check if downloaded, if so skip
@@ -166,9 +199,7 @@ class Spider:
         # asyncio.wait will warp coroutines into Tasks, which would be
         # executed non-blockingly
         try:
-            self.loop.run_until_complete(asyncio.wait(
-                [Article(link=link, session=self.session).save() for link in self.articles_to_fetch])
-            )
+            self.run_under_limit(self.articles_to_fetch, task_type='article')
         except ValueError:
             # ValueError: Set of coroutines/Futures is empty.
             log.info('No new articles yet.')
