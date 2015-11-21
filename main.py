@@ -25,7 +25,7 @@ class Spider:
         self.new_issues = set()
 
         # By default it won't go back to 1998
-        self.fetch_old_articles = False
+        self.fetch_old_articles = True
 
         # {date: [link], ...}
         self.articles = dict()
@@ -129,9 +129,8 @@ class Spider:
         f1 = asyncio.wait([self.parse_single_issue(issue_link=old_issue_link, old=True)
                            for old_issue_link in self.old_issues])
 
-        new_issues = list(self.new_issues)[:10]
         f2 = asyncio.wait([self.parse_single_issue(issue_link=new_issue_link)
-                           for new_issue_link in new_issues])
+                           for new_issue_link in self.new_issues])
 
         if self.fetch_old_articles:
             self.loop.run_until_complete(f1)
