@@ -32,8 +32,8 @@ headers = {
 
 
 async def get_body(client, url):
-        async with client.get(url) as response:
-            return await response.read()
+    async with client.get(url) as response:
+        return await response.read()
 
 async def post_data(client, url, data):
     async with client.post(url=url, data=data) as response:
