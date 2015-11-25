@@ -31,13 +31,18 @@ headers = {
     }
 
 
-async def get_body(client, url):
-    async with client.get(url) as response:
-        return await response.read()
+@asyncio.coroutine
+def get_body(client, url):
+    response = yield from client.get(url)
+    content = yield from response.read()
+    return content
 
-async def post_data(client, url, data):
-    async with client.post(url=url, data=data) as response:
-        return await response.read()
+
+@asyncio.coroutine
+def post_data(client, url, data):
+    response = yield from client.post(url=url, data=data)
+    result = yield from response.read()
+    return result
 
 
 class CaixinRegex:
@@ -79,7 +84,8 @@ def load_session_or_login():
     :return: a aiohttp.ClientSession() that available for crawling
     """
     try:
-        conn = aiohttp.TCPConnector(limit=settings.conn_limit, use_dns_cache=True)
+        conn = aiohttp.TCPConnector(limit=settings.conn_limit, use_dns_cache=True,
+                                    force_close=True, conn_timeout=10)
         loop = asyncio.get_event_loop()
         with open(session_path, 'rb') as cookies:
             session_cookies = pickle.load(cookies)
@@ -117,7 +123,8 @@ def login():
     )
 
     # Init with headers and connection limit
-    conn = aiohttp.TCPConnector(limit=settings.conn_limit, use_dns_cache=True)
+    conn = aiohttp.TCPConnector(limit=settings.conn_limit, use_dns_cache=True,
+                                force_close=True, conn_timeout=0.01)
     loop = asyncio.get_event_loop()
     session = aiohttp.ClientSession(loop=loop, headers=headers, connector=conn)
 
