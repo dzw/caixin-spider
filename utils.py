@@ -85,7 +85,7 @@ def load_session_or_login():
     """
     try:
         conn = aiohttp.TCPConnector(limit=settings.conn_limit, use_dns_cache=True,
-                                    force_close=True, conn_timeout=10)
+                                    force_close=True)
         loop = asyncio.get_event_loop()
         with open(session_path, 'rb') as cookies:
             session_cookies = pickle.load(cookies)
@@ -124,7 +124,7 @@ def login():
 
     # Init with headers and connection limit
     conn = aiohttp.TCPConnector(limit=settings.conn_limit, use_dns_cache=True,
-                                force_close=True, conn_timeout=0.01)
+                                force_close=True)
     loop = asyncio.get_event_loop()
     session = aiohttp.ClientSession(loop=loop, headers=headers, connector=conn)
 
