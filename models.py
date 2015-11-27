@@ -6,7 +6,7 @@ except ImportError:
         return something
 
 from settings import db, sign_of_404
-from utils import CaixinRegex
+from utils import CaixinRegex, get_body
 import logging
 import random
 import asyncio
@@ -34,17 +34,18 @@ class Article:
 
         # subtract json from javascript response
         # which contains: current page, media count, total page count
-        contents = self.session.get(content_link)
+        contents = yield from get_body(self.session, content_link)
+        contents = contents.decode('utf-8')
 
         # Deal with 404
-        if sign_of_404 in contents.text:
+        if sign_of_404 in contents:
             return ''
 
         # If any content
         try:
-            contents_json = eval(CaixinRegex.article_content.findall(contents.text)[0])
+            contents_json = eval(CaixinRegex.article_content.findall(contents)[0])
         except:
-            log.error(contents.text)
+            log.error(contents)
             contents_json = {'totalPage': 1, 'content': ''}
 
         # If page is split into more than 1, it should be revealed in the json
@@ -52,8 +53,8 @@ class Article:
         if contents_json['totalPage'] > 1 or \
                 (contents_json['totalPage'] != 1 and not contents_json['content']):
             content_link = content_link.replace('page=1', 'page=0')
-            contents = self.session.get(content_link)
-            contents_json = eval(CaixinRegex.article_content.findall(contents.text)[0])
+            contents = yield from get_body(self.session, content_link)
+            contents_json = eval(CaixinRegex.article_content.findall(contents.decode('utf-8'))[0])
 
         log.debug('Article {} has been downloaded'.format(self.link))
         # assert len(contents_json['content']) > 0
@@ -62,8 +63,8 @@ class Article:
 
     @asyncio.coroutine
     def get_title(self):
-        page = self.session.get(self.link)
-        title = CaixinRegex.article_title.findall(page.text)
+        page = yield from get_body(self.session, self.link)
+        title = CaixinRegex.article_title.findall(page.decode('utf-8'))
         if not title:
             log.debug('>>> article {} has no title'.format(self.link))
             title = ['Untitled']

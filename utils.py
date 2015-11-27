@@ -6,11 +6,12 @@ Utils including:
  - database check and create
 
 """
+import aiohttp
+import asyncio
 import logging
 import os
 import pickle
 import re
-import requests
 import settings
 
 log = logging.getLogger(__name__)
@@ -19,6 +20,29 @@ log = logging.getLogger(__name__)
 session_name = 'caixin.p'
 abs_path = os.path.realpath(__file__)
 session_path = abs_path.replace(__file__, session_name)
+
+
+headers = {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_3) '
+                      'AppleWebKit/537.36 (KHTML, like Gecko) '
+                      'Chrome/43.0.2357.81 Safari/537.36',
+        'Referer': 'http://user.caixin.com/usermanage/login/',
+        'Via': 'Copyright@2014 Caixin'
+    }
+
+
+@asyncio.coroutine
+def get_body(client, url):
+    response = yield from client.get(url)
+    content = yield from response.read()
+    return content
+
+
+@asyncio.coroutine
+def post_data(client, url, data):
+    response = yield from client.post(url=url, data=data)
+    result = yield from response.read()
+    return result
 
 
 class CaixinRegex:
@@ -57,18 +81,24 @@ class CaixinRegex:
 def load_session_or_login():
     """
 
-    :return: a requests.session() that available for crawling
+    :return: a aiohttp.ClientSession() that available for crawling
     """
     try:
-        session = pickle.load(open(session_path, 'rb'))
+        conn = aiohttp.TCPConnector(limit=settings.conn_limit, use_dns_cache=True,
+                                    force_close=True)
+        loop = asyncio.get_event_loop()
+        with open(session_path, 'rb') as cookies:
+            session_cookies = pickle.load(cookies)
+        session = aiohttp.ClientSession(loop=loop, headers=headers,
+                                        connector=conn, cookies=session_cookies)
 
         # Get user's home page to verify:
         # - should contain cookies
         # - didn't timeout, get a new page to check
         try:
-            logged_in = session.get('http://user.caixin.com/', timeout=3)
+            logged_in = loop.run_until_complete(get_body(session, 'http://user.caixin.com/'))
             log.debug("session loaded with username {}".format(dict(session.cookies)['SA_USER_USER_NAME']))
-            if 'Welcome' not in logged_in.text:
+            if 'Welcome' not in logged_in.decode('utf-8'):
                 raise ValueError
         except:
             # network is slow, check connection
@@ -86,40 +116,43 @@ def load_session_or_login():
 
 
 def login():
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_3) '
-                      'AppleWebKit/537.36 (KHTML, like Gecko) '
-                      'Chrome/43.0.2357.81 Safari/537.36',
-        'Referer': 'http://user.caixin.com/usermanage/login/',
-        'Via': 'Copyright@2014 Caixin'
-    }
     data = dict(
         username=settings.USERNAME,
         password=settings.PASSWORD,
         cookietime=31536000  # seems TTL of cookies
     )
 
-    # Init cookies
-    session = requests.session()
-    session.headers.update(headers)
-    session.get('http://weekly.caixin.com/')
+    # Init with headers and connection limit
+    conn = aiohttp.TCPConnector(limit=settings.conn_limit, use_dns_cache=True,
+                                force_close=True)
+    loop = asyncio.get_event_loop()
+    session = aiohttp.ClientSession(loop=loop, headers=headers, connector=conn)
+
+    _ = loop.run_until_complete(get_body(session, 'http://weekly.caixin.com/'))
 
     # Go to login page
     login_url = 'http://user.caixin.com/usermanage/login/'
-    session.get(login_url)
+    _ = loop.run_until_complete(get_body(session, login_url))
 
     # Login
-    # this POST would automatically set cookies for session
-    k = session.post(login_url, data=data)
-    logged_in = session.get('http://user.caixin.com/')
-    if 'SA_USER_auth' in k.headers['set-cookie']:
-        log.info('user {} login succeed!'.format(data['username']))
-        _logged = True
-    else:
-        raise OverflowError("BOMB! Didn't log in!")
+    # this POST, if succeed, would automatically set cookies for session
+    login_json = loop.run_until_complete(post_data(session, login_url, data))
 
-    # Dump to the same folder as login.py
-    pickle.dump(session, open(session_path, 'wb'))
+    logged_in = False
+    try:
+        login_result_1 = eval(login_json.decode('utf-8'))
+        if login_result_1['code'] == 1:
+            logged_in = True
+    except KeyError:
+        if 'SA_USER_auth' in session.cookies:
+            logged_in = True
+
+    if not logged_in:
+        raise ValueError("Didn't log in successfully, check your codes.")
+
+    # aiohttp.Session itself is not serializable, dump its
+    # cookies and load back later
+    pickle.dump(session.cookies, open(session_path, 'wb'))
 
     return session
 

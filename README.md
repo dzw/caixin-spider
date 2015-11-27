@@ -4,7 +4,7 @@ Incrementally/non-blockingly crawl articles from 1998.4 till now, using python3 
 
 ## Prerequisites
 
-**Python3**
+**Python3.5**
 
 Packages:
 
@@ -44,15 +44,11 @@ Debian 7 currently have default python version of 3.2, the project used some gra
     echo 'eval "$(pyenv virtualenv-init -)"' >> ~/.bashrc
     source ~/.bashrc
 
-    pyenv install 3.4.3
-    pyenv virtualenv 3.4.3 ../.env/"${PWD##*/}"
+    pyenv install 3.5.0
+    pyenv virtualenv 3.5.0 ../.env/"${PWD##*/}"
     pyenv shell "${PWD##*/}"
 
     pip install -r requirements.txt
     python main.py
 
 Remain commands are the same as above.
-
-## TODO
-
-* Improve speed

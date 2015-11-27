@@ -3,11 +3,12 @@ import datetime
 import logging
 import os
 import PyRSS2Gen
-import requests
+import resource
+
 from models import Article
 from settings import db
 from utils import CaixinRegex
-from utils import load_session_or_login
+from utils import load_session_or_login, get_body
 from settings import XML_DIR
 
 log = logging.getLogger(__name__)
@@ -26,7 +27,7 @@ class Spider:
         self.new_issues = set()
 
         # By default it won't go back to 1998
-        self.fetch_old_articles = False
+        self.fetch_old_articles = True
 
         # {date: [link], ...}
         self.articles = dict()
@@ -37,15 +38,15 @@ class Spider:
         # Latest issue link to generate rss
         self.latest_issue_date = None
 
+        # Event loop, aiohttp Session
+        self.loop = asyncio.get_event_loop()
+        self.session = load_session_or_login()
+
     def init(self):
         """
         Check if network and database are working.
         """
-        # Get requests.session
-        self.session = load_session_or_login()
-        self.session.mount('http://', requests.adapters.HTTPAdapter(pool_connections=100, pool_maxsize=100))
-
-        # Create index for mongo
+        # Create index for MongoDB
         db.articles.create_index('date')
         db.articles.create_index('link')
         db.articles.create_index('title')
@@ -59,10 +60,11 @@ class Spider:
         """
         Fetch issue links of 2010.1 - now, generate links from 1998.4 - 2009.11
         """
-        weekly_home_page = self.session.get("http://weekly.caixin.com/")
+        weekly_home_page = self.loop.run_until_complete(get_body(self.session, "http://weekly.caixin.com/"))
+        weekly_home_page = weekly_home_page.decode('utf-8')
 
         # Part 1: 2010 - now
-        new_issues = CaixinRegex.issue_2010_2015.findall(weekly_home_page.text)[0]
+        new_issues = CaixinRegex.issue_2010_2015.findall(weekly_home_page)[0]
         new_issue_links = CaixinRegex.issue_2010_2015_link.findall(new_issues)
 
         # The latest issue is not there, so manually add it
@@ -74,7 +76,7 @@ class Spider:
         self.new_issues.add(latest_issue_link)
 
         # Also add its date for later RSS generation
-        cover = CaixinRegex.cover.findall(weekly_home_page.text)[0]
+        cover = CaixinRegex.cover.findall(weekly_home_page)[0]
         latest_issue_date = CaixinRegex.old_issue_date.findall(cover)[0]
         self.latest_issue_date = latest_issue_date
 
@@ -94,12 +96,8 @@ class Spider:
         """
         Parse single issue link, append links to self.articles
         """
-        page_response = self.session.get(issue_link)
-
-        if page_response.status_code == 200:
-            page = page_response.text
-        else:
-            raise ValueError("link {} did'n t give correct response")
+        page_response = yield from get_body(self.session, issue_link)
+        page = page_response.decode('utf-8')
 
         if not old:
             try:
@@ -125,20 +123,50 @@ class Spider:
             else:
                 self.articles[date] = articles
 
+    def run_under_limit(self, tasks, task_type):
+        """
+        type could be issue/article
+        This function gets `ulimit -n` and tries to work under the constraint
+        """
+        soft, _ = resource.getrlimit(resource.RLIMIT_NOFILE)
+        count = 0
+        current_task = []
+        threshold = min(len(tasks), soft) * 0.5
+        for task in tasks:
+            current_task.append(task)
+            count += 1
+            if count >= threshold:
+                if task_type == 'issue':
+                    future = asyncio.wait([self.parse_single_issue(issue_link=task, old=True)
+                                           for task in current_task])
+                elif task_type == 'article':
+                    future = asyncio.wait([Article(link=link, session=self.session).save()
+                                           for link in current_task])
+                else:
+                    raise TypeError("Unsupported type.")
+                self.loop.run_until_complete(future)
+                current_task = []
+
+        # Remaining tasks
+        if current_task:
+            if task_type == 'issue':
+                future = asyncio.wait([self.parse_single_issue(issue_link=task, old=True)
+                                           for task in current_task])
+            elif task_type == 'article':
+                future = asyncio.wait([Article(link=link, session=self.session).save()
+                                           for link in current_task])
+            else:
+                raise TypeError("Unsupported type.")
+            self.loop.run_until_complete(future)
+
     def parse_issues(self):
         """
         Feed all articles into dict self.articles
         """
-        f1 = asyncio.wait([self.parse_single_issue(issue_link=old_issue_link, old=True)
-                           for old_issue_link in self.old_issues])
 
-        f2 = asyncio.wait([self.parse_single_issue(issue_link=new_issue_link)
-                           for new_issue_link in self.new_issues])
-
-        loop = asyncio.get_event_loop()
         if self.fetch_old_articles:
-            loop.run_until_complete(f1)
-        loop.run_until_complete(f2)
+            self.run_under_limit(self.old_issues, task_type='issue')
+        self.run_under_limit(self.new_issues, task_type='issue')
 
     def generate_downloading_items(self):
         # check article link if in database then, check if downloaded, if so skip
@@ -169,17 +197,11 @@ class Spider:
 
         # asyncio.wait will warp coroutines into Tasks, which would be
         # executed non-blockingly
-        loop = asyncio.get_event_loop()
-
         try:
-            loop.run_until_complete(asyncio.wait(
-                [Article(link=link, session=self.session).save() for link in self.articles_to_fetch])
-            )
+            self.run_under_limit(self.articles_to_fetch, task_type='article')
         except ValueError:
             # ValueError: Set of coroutines/Futures is empty.
             log.info('No new articles yet.')
-
-        loop.close()
 
     def generate_feed(self):
         xml_path = os.path.join(XML_DIR, 'caixin_rss.xml')
@@ -218,6 +240,7 @@ class Spider:
         log.info('Done. {} issues, {} articles, {} 404 articles in total!'.format(
             db.issues.count(), db.articles.count(), db.not_found_articles.count()
         ))
+        self.session.close()
 
 if __name__ == '__main__':
     spider = Spider()
