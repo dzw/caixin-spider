@@ -42,7 +42,7 @@ def get_body(client, url):
 def post_data(client, url, data):
     response = yield from client.post(url=url, data=data)
     result = yield from response.read()
-    return result
+    return result, response.cookies
 
 
 class CaixinRegex:
@@ -97,7 +97,7 @@ def load_session_or_login():
         # - didn't timeout, get a new page to check
         try:
             logged_in = loop.run_until_complete(get_body(session, 'http://user.caixin.com/'))
-            log.debug("session loaded with username {}".format(dict(session.cookies)['SA_USER_USER_NAME']))
+            log.debug("session loaded with username {}".format(dict(session_cookies)['SA_USER_USER_NAME']))
             if 'Welcome' not in logged_in.decode('utf-8'):
                 raise ValueError
         except:
@@ -136,7 +136,7 @@ def login():
 
     # Login
     # this POST, if succeed, would automatically set cookies for session
-    login_json = loop.run_until_complete(post_data(session, login_url, data))
+    login_json, cookies= loop.run_until_complete(post_data(session, login_url, data))
 
     logged_in = False
     try:
@@ -152,7 +152,7 @@ def login():
 
     # aiohttp.Session itself is not serializable, dump its
     # cookies and load back later
-    pickle.dump(session.cookies, open(session_path, 'wb'))
+    pickle.dump(cookies, open(session_path, 'wb'))
 
     return session
 
