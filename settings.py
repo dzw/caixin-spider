@@ -2,7 +2,7 @@ import os
 
 try:
     from password import USERNAME, PASSWORD
-except:
+except ModuleNotFoundError:
     raise ValueError("Specify username/password in `password.py` "
                      "under the same folder!")
 

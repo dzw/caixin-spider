@@ -44,7 +44,7 @@ class Article:
         # If any content
         try:
             contents_json = eval(CaixinRegex.article_content.findall(contents)[0])
-        except:
+        except IndexError:
             log.error(contents)
             contents_json = {'totalPage': 1, 'content': ''}
 

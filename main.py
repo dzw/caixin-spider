@@ -102,7 +102,7 @@ class Spider:
         if not old:
             try:
                 page = CaixinRegex.new_issue_main_content.findall(page)[0]
-            except:
+            except IndexError:
                 # issue in 2010 has no such a main content thing
                 pass
 
